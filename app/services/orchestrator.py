@@ -1,3 +1,4 @@
+from collections import deque
 import random
 
 from app.core.radio_profile import RADIO_PROFILE
@@ -16,13 +17,13 @@ class RadioOrchestrator:
         self._bpm_max = RADIO_PROFILE["bpm_max"]
         self._target_bpm = RADIO_PROFILE["target_bpm"]
         self._available_moods = RADIO_PROFILE["moods"]
-        self._available_energy_levels = RADIO_PROFILE["energy_levels"]
         self._duration_options = RADIO_PROFILE["duration_options_seconds"]
         self._available_keys = RADIO_PROFILE["musical_keys"]
 
-        self._buffer: list[Track] = []
+        self._buffer: deque[Track] = deque()
         self._current_track: Track | None = None
         self._sequence_number = 0
+        self._is_playing = False
 
     def get_buffer_minutes(self) -> float:
         total_buffer_seconds = sum(track.duration_seconds for track in self._buffer)
@@ -32,18 +33,22 @@ class RadioOrchestrator:
         return RADIO_PROFILE
 
     def get_status(self) -> dict:
-        recent_tracks = [track.model_dump() for track in self._buffer[-3:]]
+        buffer_list = list(self._buffer)
+        next_track = buffer_list[0] if buffer_list else None
+        recent_tracks = [track.model_dump() for track in buffer_list[:3]]
 
         return {
             "channel_name": self.channel_name,
             "style": self.style,
             "mode": self.mode,
             "description": self.description,
+            "is_playing": self._is_playing,
             "current_track": self._current_track.model_dump() if self._current_track else None,
+            "next_track": next_track.model_dump() if next_track else None,
             "buffer_minutes": self.get_buffer_minutes(),
             "target_buffer_minutes": self.target_buffer_minutes,
             "queued_tracks": len(self._buffer),
-            "recent_tracks": recent_tracks,
+            "upcoming_tracks_preview": recent_tracks,
             "constraints": {
                 "allow_vocals": RADIO_PROFILE["allow_vocals"],
                 "allow_speech": RADIO_PROFILE["allow_speech"],
@@ -71,7 +76,7 @@ class RadioOrchestrator:
         self._buffer.append(track)
 
         if self._current_track is None:
-            self._current_track = track
+            self.start_playback()
 
         return track
 
@@ -83,8 +88,44 @@ class RadioOrchestrator:
 
         return generated_tracks
 
+    def start_playback(self) -> dict:
+        if self._current_track is None and self._buffer:
+            self._current_track = self._buffer.popleft()
+
+        self._is_playing = self._current_track is not None
+        return self.get_playback_state()
+
+    def advance_to_next_track(self) -> dict:
+        finished_track = self._current_track
+
+        if self._buffer:
+            self._current_track = self._buffer.popleft()
+            self._is_playing = True
+        else:
+            self._current_track = None
+            self._is_playing = False
+
+        return {
+            "message": "Playback advanced to next track",
+            "finished_track": finished_track.model_dump() if finished_track else None,
+            "playback_state": self.get_playback_state(),
+        }
+
+    def get_playback_state(self) -> dict:
+        next_track = self._buffer[0] if self._buffer else None
+
+        return {
+            "is_playing": self._is_playing,
+            "current_track": self._current_track.model_dump() if self._current_track else None,
+            "next_track": next_track.model_dump() if next_track else None,
+            "queued_tracks": len(self._buffer),
+            "buffer_minutes": self.get_buffer_minutes(),
+        }
+
     def _build_next_profile(self) -> dict:
-        if not self._buffer and self._current_track is None:
+        reference_track = self._get_reference_track()
+
+        if reference_track is None:
             return {
                 "bpm": self._target_bpm,
                 "energy": "medium",
@@ -93,9 +134,9 @@ class RadioOrchestrator:
                 "duration_seconds": random.choice(self._duration_options),
             }
 
-        reference_track = self._buffer[-1] if self._buffer else self._current_track
-        recent_moods = {track.mood for track in self._buffer[-2:]}
-        recent_keys = {track.musical_key for track in self._buffer[-2:]}
+        recent_tracks = list(self._buffer)[-2:]
+        recent_moods = {track.mood for track in recent_tracks}
+        recent_keys = {track.musical_key for track in recent_tracks}
 
         next_energy = self._choose_next_energy(reference_track.energy)
         next_bpm = self._choose_next_bpm(reference_track.bpm, next_energy)
@@ -110,6 +151,13 @@ class RadioOrchestrator:
             "musical_key": next_key,
             "duration_seconds": next_duration,
         }
+
+    def _get_reference_track(self) -> Track | None:
+        if self._buffer:
+            return self._buffer[-1]
+        if self._current_track:
+            return self._current_track
+        return None
 
     def _choose_next_energy(self, current_energy: str) -> str:
         transitions = {

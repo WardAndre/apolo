@@ -23,6 +23,11 @@ def get_radio_buffer():
     }
 
 
+@router.get("/playback")
+def get_playback_state():
+    return radio_orchestrator.get_playback_state()
+
+
 @router.post("/generate-next")
 def generate_next_track():
     track = radio_orchestrator.generate_next_track()
@@ -42,3 +47,13 @@ def fill_buffer():
         "generated_tracks": [track.model_dump() for track in generated_tracks],
         "radio_status": radio_orchestrator.get_status(),
     }
+
+
+@router.post("/playback/start")
+def start_playback():
+    return radio_orchestrator.start_playback()
+
+
+@router.post("/playback/next")
+def advance_playback():
+    return radio_orchestrator.advance_to_next_track()
