@@ -1,0 +1,17 @@
+RADIO_PROFILE = {
+    "channel_name": "Apolo Radio",
+    "style": "Progressive Psy / Deep Hypnotic",
+    "mode": "instrumental",
+    "description": "Continuous instrumental radio with hypnotic, deep and psychedelic progression.",
+    "bpm_min": 134,
+    "bpm_max": 136,
+    "target_bpm": 135,
+    "moods": ["hypnotic", "deep", "spatial", "nocturnal"],
+    "energy_levels": ["medium", "medium_high"],
+    "duration_options_seconds": [240, 300, 360],
+    "musical_keys": ["A minor", "C minor", "D minor", "E minor", "G minor"],
+    "allow_vocals": False,
+    "allow_speech": False,
+    "allow_jingles": False,
+    "target_buffer_minutes": 30,
+}
