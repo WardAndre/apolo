@@ -49,6 +49,16 @@ def fill_buffer():
     }
 
 
+@router.post("/auto-refill/check")
+def check_auto_refill():
+    result = radio_orchestrator.ensure_minimum_buffer()
+    return {
+        "message": "Auto-refill check executed",
+        "result": result,
+        "radio_status": radio_orchestrator.get_status(),
+    }
+
+
 @router.post("/playback/start")
 def start_playback():
     return radio_orchestrator.start_playback()

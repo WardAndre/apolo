@@ -11,7 +11,10 @@ class RadioOrchestrator:
         self.style = RADIO_PROFILE["style"]
         self.mode = RADIO_PROFILE["mode"]
         self.description = RADIO_PROFILE["description"]
+
         self.target_buffer_minutes = RADIO_PROFILE["target_buffer_minutes"]
+        self.minimum_buffer_minutes = RADIO_PROFILE["minimum_buffer_minutes"]
+        self.auto_refill_enabled = RADIO_PROFILE["auto_refill_enabled"]
 
         self._bpm_min = RADIO_PROFILE["bpm_min"]
         self._bpm_max = RADIO_PROFILE["bpm_max"]
@@ -35,7 +38,7 @@ class RadioOrchestrator:
     def get_status(self) -> dict:
         buffer_list = list(self._buffer)
         next_track = buffer_list[0] if buffer_list else None
-        recent_tracks = [track.model_dump() for track in buffer_list[:3]]
+        upcoming_tracks_preview = [track.model_dump() for track in buffer_list[:3]]
 
         return {
             "channel_name": self.channel_name,
@@ -46,9 +49,11 @@ class RadioOrchestrator:
             "current_track": self._current_track.model_dump() if self._current_track else None,
             "next_track": next_track.model_dump() if next_track else None,
             "buffer_minutes": self.get_buffer_minutes(),
+            "minimum_buffer_minutes": self.minimum_buffer_minutes,
             "target_buffer_minutes": self.target_buffer_minutes,
+            "auto_refill_enabled": self.auto_refill_enabled,
             "queued_tracks": len(self._buffer),
-            "upcoming_tracks_preview": recent_tracks,
+            "upcoming_tracks_preview": upcoming_tracks_preview,
             "constraints": {
                 "allow_vocals": RADIO_PROFILE["allow_vocals"],
                 "allow_speech": RADIO_PROFILE["allow_speech"],
@@ -59,7 +64,105 @@ class RadioOrchestrator:
     def get_buffer(self) -> list[dict]:
         return [track.model_dump() for track in self._buffer]
 
+    def get_playback_state(self) -> dict:
+        next_track = self._buffer[0] if self._buffer else None
+
+        return {
+            "is_playing": self._is_playing,
+            "current_track": self._current_track.model_dump() if self._current_track else None,
+            "next_track": next_track.model_dump() if next_track else None,
+            "queued_tracks": len(self._buffer),
+            "buffer_minutes": self.get_buffer_minutes(),
+            "minimum_buffer_minutes": self.minimum_buffer_minutes,
+            "target_buffer_minutes": self.target_buffer_minutes,
+            "auto_refill_enabled": self.auto_refill_enabled,
+        }
+
     def generate_next_track(self) -> Track:
+        track = self._create_track()
+
+        if self._current_track is None:
+            self.start_playback()
+
+        return track
+
+    def fill_buffer_to_target(self, auto_start_playback: bool = True) -> list[Track]:
+        generated_tracks: list[Track] = []
+
+        while self.get_buffer_minutes() < self.target_buffer_minutes:
+            generated_tracks.append(self._create_track())
+
+        if auto_start_playback and self._current_track is None and self._buffer:
+            self.start_playback()
+
+        return generated_tracks
+
+    def ensure_minimum_buffer(self) -> dict:
+        if not self.auto_refill_enabled:
+            return {
+                "auto_refill_enabled": False,
+                "auto_refill_triggered": False,
+                "generated_tracks_count": 0,
+                "generated_tracks": [],
+                "buffer_minutes": self.get_buffer_minutes(),
+            }
+
+        if self.get_buffer_minutes() >= self.minimum_buffer_minutes:
+            return {
+                "auto_refill_enabled": True,
+                "auto_refill_triggered": False,
+                "generated_tracks_count": 0,
+                "generated_tracks": [],
+                "buffer_minutes": self.get_buffer_minutes(),
+            }
+
+        generated_tracks = self.fill_buffer_to_target(auto_start_playback=False)
+
+        return {
+            "auto_refill_enabled": True,
+            "auto_refill_triggered": True,
+            "generated_tracks_count": len(generated_tracks),
+            "generated_tracks": [track.model_dump() for track in generated_tracks],
+            "buffer_minutes": self.get_buffer_minutes(),
+        }
+
+    def start_playback(self) -> dict:
+        if self._current_track is None and self._buffer:
+            self._current_track = self._buffer.popleft()
+
+        self._is_playing = self._current_track is not None
+        auto_refill_result = self.ensure_minimum_buffer()
+
+        return {
+            "message": "Playback started",
+            "auto_refill": auto_refill_result,
+            "playback_state": self.get_playback_state(),
+        }
+
+    def advance_to_next_track(self) -> dict:
+        finished_track = self._current_track
+
+        if self._buffer:
+            self._current_track = self._buffer.popleft()
+            self._is_playing = True
+        else:
+            self._current_track = None
+            self._is_playing = False
+
+        auto_refill_result = self.ensure_minimum_buffer()
+
+        if self._current_track is None and self._buffer:
+            self._current_track = self._buffer.popleft()
+            self._is_playing = True
+
+        return {
+            "message": "Playback advanced to next track",
+            "finished_track": finished_track.model_dump() if finished_track else None,
+            "auto_refill": auto_refill_result,
+            "playback_state": self.get_playback_state(),
+        }
+
+    def _create_track(self) -> Track:
         profile = self._build_next_profile()
 
         self._sequence_number += 1
@@ -74,53 +177,7 @@ class RadioOrchestrator:
         )
 
         self._buffer.append(track)
-
-        if self._current_track is None:
-            self.start_playback()
-
         return track
-
-    def fill_buffer_to_target(self) -> list[Track]:
-        generated_tracks: list[Track] = []
-
-        while self.get_buffer_minutes() < self.target_buffer_minutes:
-            generated_tracks.append(self.generate_next_track())
-
-        return generated_tracks
-
-    def start_playback(self) -> dict:
-        if self._current_track is None and self._buffer:
-            self._current_track = self._buffer.popleft()
-
-        self._is_playing = self._current_track is not None
-        return self.get_playback_state()
-
-    def advance_to_next_track(self) -> dict:
-        finished_track = self._current_track
-
-        if self._buffer:
-            self._current_track = self._buffer.popleft()
-            self._is_playing = True
-        else:
-            self._current_track = None
-            self._is_playing = False
-
-        return {
-            "message": "Playback advanced to next track",
-            "finished_track": finished_track.model_dump() if finished_track else None,
-            "playback_state": self.get_playback_state(),
-        }
-
-    def get_playback_state(self) -> dict:
-        next_track = self._buffer[0] if self._buffer else None
-
-        return {
-            "is_playing": self._is_playing,
-            "current_track": self._current_track.model_dump() if self._current_track else None,
-            "next_track": next_track.model_dump() if next_track else None,
-            "queued_tracks": len(self._buffer),
-            "buffer_minutes": self.get_buffer_minutes(),
-        }
 
     def _build_next_profile(self) -> dict:
         reference_track = self._get_reference_track()

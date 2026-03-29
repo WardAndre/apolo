@@ -14,4 +14,6 @@ RADIO_PROFILE = {
     "allow_speech": False,
     "allow_jingles": False,
     "target_buffer_minutes": 30,
+    "minimum_buffer_minutes": 10,
+    "auto_refill_enabled": True,
 }
