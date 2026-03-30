@@ -2,7 +2,9 @@ from collections import deque
 import random
 
 from app.core.radio_profile import RADIO_PROFILE
+from app.schemas.generation import TrackGenerationRequest
 from app.schemas.track import Track
+from app.services.generators.factory import get_track_generator
 
 
 class RadioOrchestrator:
@@ -23,6 +25,8 @@ class RadioOrchestrator:
         self._duration_options = RADIO_PROFILE["duration_options_seconds"]
         self._available_keys = RADIO_PROFILE["musical_keys"]
 
+        self._track_generator = get_track_generator()
+
         self._buffer: deque[Track] = deque()
         self._current_track: Track | None = None
         self._sequence_number = 0
@@ -35,6 +39,9 @@ class RadioOrchestrator:
     def get_profile(self) -> dict:
         return RADIO_PROFILE
 
+    def get_generator_info(self) -> dict:
+        return self._track_generator.get_info()
+
     def get_status(self) -> dict:
         buffer_list = list(self._buffer)
         next_track = buffer_list[0] if buffer_list else None
@@ -45,6 +52,7 @@ class RadioOrchestrator:
             "style": self.style,
             "mode": self.mode,
             "description": self.description,
+            "generator": self.get_generator_info(),
             "is_playing": self._is_playing,
             "current_track": self._current_track.model_dump() if self._current_track else None,
             "next_track": next_track.model_dump() if next_track else None,
@@ -76,6 +84,7 @@ class RadioOrchestrator:
             "minimum_buffer_minutes": self.minimum_buffer_minutes,
             "target_buffer_minutes": self.target_buffer_minutes,
             "auto_refill_enabled": self.auto_refill_enabled,
+            "generator": self.get_generator_info(),
         }
 
     def generate_next_track(self) -> Track:
@@ -127,6 +136,9 @@ class RadioOrchestrator:
         }
 
     def start_playback(self) -> dict:
+        if self._current_track is None and not self._buffer and self.auto_refill_enabled:
+            self.ensure_minimum_buffer()
+
         if self._current_track is None and self._buffer:
             self._current_track = self._buffer.popleft()
 
@@ -166,9 +178,11 @@ class RadioOrchestrator:
         profile = self._build_next_profile()
 
         self._sequence_number += 1
-        track = Track(
+        request = TrackGenerationRequest(
             sequence_number=self._sequence_number,
             title=f"Apolo Sequence {self._sequence_number}",
+            style=self.style,
+            mode=self.mode,
             bpm=profile["bpm"],
             energy=profile["energy"],
             mood=profile["mood"],
@@ -176,6 +190,7 @@ class RadioOrchestrator:
             duration_seconds=profile["duration_seconds"],
         )
 
+        track = self._track_generator.generate_track(request)
         self._buffer.append(track)
         return track
 

@@ -10,6 +10,11 @@ def get_radio_profile():
     return radio_orchestrator.get_profile()
 
 
+@router.get("/generator")
+def get_generator_info():
+    return radio_orchestrator.get_generator_info()
+
+
 @router.get("/status")
 def get_radio_status():
     return radio_orchestrator.get_status()

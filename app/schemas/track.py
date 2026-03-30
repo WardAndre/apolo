@@ -17,4 +17,6 @@ class Track(BaseModel):
     mood: MoodType
     musical_key: str
     duration_seconds: int
+    generator_name: str
+    audio_asset_uri: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
