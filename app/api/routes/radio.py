@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.core.settings import get_settings
 from app.services.orchestrator import radio_orchestrator
 
 router = APIRouter(prefix="/radio", tags=["radio"])
@@ -8,6 +9,16 @@ router = APIRouter(prefix="/radio", tags=["radio"])
 @router.get("/profile")
 def get_radio_profile():
     return radio_orchestrator.get_profile()
+
+
+@router.get("/settings")
+def get_radio_settings():
+    settings = get_settings()
+    return {
+        "app_name": settings.app_name,
+        "app_env": settings.app_env,
+        "generator_backend": settings.generator_backend,
+    }
 
 
 @router.get("/generator")
