@@ -18,5 +18,8 @@ class Track(BaseModel):
     musical_key: str
     duration_seconds: int
     generator_name: str
+    generation_status: Literal["queued", "processing", "completed", "failed"] = "completed"
+    generation_time_ms: int | None = None
+    prompt_text: str | None = None
     audio_asset_uri: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
