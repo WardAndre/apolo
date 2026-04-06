@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core.settings import get_settings
 from app.services.orchestrator import radio_orchestrator
@@ -18,12 +18,34 @@ def get_radio_settings():
         "app_name": settings.app_name,
         "app_env": settings.app_env,
         "generator_backend": settings.generator_backend,
+        "ml_provider": settings.ml_provider,
     }
 
 
 @router.get("/generator")
 def get_generator_info():
     return radio_orchestrator.get_generator_info()
+
+
+@router.get("/provider")
+def get_provider_info():
+    generator_info = radio_orchestrator.get_generator_info()
+    provider = generator_info.get("provider")
+
+    if provider is None:
+        raise HTTPException(status_code=404, detail="Current generator has no provider")
+
+    return provider
+
+
+@router.get("/generation-jobs/{job_id}")
+def get_generation_job(job_id: str):
+    job = radio_orchestrator.get_generation_job(job_id)
+
+    if job is None:
+        raise HTTPException(status_code=404, detail="Generation job not found")
+
+    return job
 
 
 @router.get("/status")
