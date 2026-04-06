@@ -12,3 +12,6 @@ class BaseTrackGenerator(ABC):
     @abstractmethod
     def get_info(self) -> dict:
         pass
+
+    def get_generation_job(self, job_id: str) -> dict | None:
+        return None

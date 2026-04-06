@@ -266,5 +266,7 @@ class RadioOrchestrator:
     def _choose_next_duration(self) -> int:
         return random.choice(self._duration_options)
 
+    def get_generation_job(self, job_id: str) -> dict | None:
+        return self._track_generator.get_generation_job(job_id)
 
 radio_orchestrator = RadioOrchestrator()
