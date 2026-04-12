@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,9 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "production"] = "development"
     generator_backend: Literal["mock", "simulated_ml", "ml_pipeline"] = "mock"
     ml_provider: Literal["simulated_vertex"] = "simulated_vertex"
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost:5432/projeto_apolo"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

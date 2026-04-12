@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.core.settings import get_settings
 from app.services.orchestrator import radio_orchestrator
@@ -19,6 +19,7 @@ def get_radio_settings():
         "app_env": settings.app_env,
         "generator_backend": settings.generator_backend,
         "ml_provider": settings.ml_provider,
+        "database_url_configured": bool(settings.database_url),
     }
 
 
@@ -46,6 +47,22 @@ def get_generation_job(job_id: str):
         raise HTTPException(status_code=404, detail="Generation job not found")
 
     return job
+
+
+@router.get("/history/generation-jobs")
+def list_recent_generation_jobs(limit: int = Query(default=20, ge=1, le=100)):
+    return {
+        "items": radio_orchestrator.list_recent_generation_jobs(limit),
+        "count": len(radio_orchestrator.list_recent_generation_jobs(limit)),
+    }
+
+
+@router.get("/history/tracks")
+def list_recent_tracks(limit: int = Query(default=20, ge=1, le=100)):
+    return {
+        "items": radio_orchestrator.list_recent_tracks(limit),
+        "count": len(radio_orchestrator.list_recent_tracks(limit)),
+    }
 
 
 @router.get("/status")

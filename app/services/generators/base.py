@@ -15,3 +15,9 @@ class BaseTrackGenerator(ABC):
 
     def get_generation_job(self, job_id: str) -> dict | None:
         return None
+
+    def list_recent_generation_jobs(self, limit: int = 20) -> list[dict]:
+        return []
+
+    def list_recent_tracks(self, limit: int = 20) -> list[dict]:
+        return []

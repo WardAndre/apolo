@@ -269,4 +269,10 @@ class RadioOrchestrator:
     def get_generation_job(self, job_id: str) -> dict | None:
         return self._track_generator.get_generation_job(job_id)
 
+    def list_recent_generation_jobs(self, limit: int = 20) -> list[dict]:
+        return self._track_generator.list_recent_generation_jobs(limit)
+
+    def list_recent_tracks(self, limit: int = 20) -> list[dict]:
+        return self._track_generator.list_recent_tracks(limit)
+
 radio_orchestrator = RadioOrchestrator()
