@@ -275,4 +275,19 @@ class RadioOrchestrator:
     def list_recent_tracks(self, limit: int = 20) -> list[dict]:
         return self._track_generator.list_recent_tracks(limit)
 
+    def get_playout_queue(self) -> list[dict]:
+        queue: list[dict] = []
+
+        if self._current_track is not None:
+            queue.append(self._current_track.model_dump())
+
+        queue.extend(track.model_dump() for track in self._buffer)
+        return queue
+
+    def get_now_playing(self) -> dict | None:
+        if self._current_track is None:
+            return None
+
+        return self._current_track.model_dump()
+
 radio_orchestrator = RadioOrchestrator()
