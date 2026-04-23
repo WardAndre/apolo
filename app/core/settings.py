@@ -14,6 +14,10 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres:postgres@localhost:5432/projeto_apolo"
     )
 
+    asset_storage_dir: str = "storage/assets"
+    asset_public_path: str = "/assets"
+    placeholder_asset_seconds: int = 20
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

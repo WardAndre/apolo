@@ -1,9 +1,32 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.core.settings import get_settings
 from app.services.orchestrator import radio_orchestrator
 
 router = APIRouter(prefix="/radio", tags=["radio"])
+
+
+def _absolute_asset_url(request: Request, asset_uri: str | None) -> str | None:
+    if asset_uri is None:
+        return None
+
+    if asset_uri.startswith("http://") or asset_uri.startswith("https://"):
+        return asset_uri
+
+    base_url = str(request.base_url).rstrip("/")
+    return f"{base_url}{asset_uri}"
+
+
+def _with_absolute_asset_url(request: Request, track: dict | None) -> dict | None:
+    if track is None:
+        return None
+
+    payload = dict(track)
+    payload["absolute_audio_asset_url"] = _absolute_asset_url(
+        request,
+        payload.get("audio_asset_uri"),
+    )
+    return payload
 
 
 @router.get("/profile")
@@ -20,6 +43,9 @@ def get_radio_settings():
         "generator_backend": settings.generator_backend,
         "ml_provider": settings.ml_provider,
         "database_url_configured": bool(settings.database_url),
+        "asset_storage_dir": settings.asset_storage_dir,
+        "asset_public_path": settings.asset_public_path,
+        "placeholder_asset_seconds": settings.placeholder_asset_seconds,
     }
 
 
@@ -51,17 +77,19 @@ def get_generation_job(job_id: str):
 
 @router.get("/history/generation-jobs")
 def list_recent_generation_jobs(limit: int = Query(default=20, ge=1, le=100)):
+    items = radio_orchestrator.list_recent_generation_jobs(limit)
     return {
-        "items": radio_orchestrator.list_recent_generation_jobs(limit),
-        "count": len(radio_orchestrator.list_recent_generation_jobs(limit)),
+        "items": items,
+        "count": len(items),
     }
 
 
 @router.get("/history/tracks")
 def list_recent_tracks(limit: int = Query(default=20, ge=1, le=100)):
+    items = radio_orchestrator.list_recent_tracks(limit)
     return {
-        "items": radio_orchestrator.list_recent_tracks(limit),
-        "count": len(radio_orchestrator.list_recent_tracks(limit)),
+        "items": items,
+        "count": len(items),
     }
 
 
@@ -81,6 +109,52 @@ def get_radio_buffer():
 @router.get("/playback")
 def get_playback_state():
     return radio_orchestrator.get_playback_state()
+
+
+@router.get("/stream/now-playing")
+def get_now_playing(request: Request):
+    current_track = radio_orchestrator.get_now_playing()
+    playback_state = radio_orchestrator.get_playback_state()
+
+    return {
+        "is_playing": playback_state["is_playing"],
+        "current_track": _with_absolute_asset_url(request, current_track),
+        "next_track": _with_absolute_asset_url(request, playback_state["next_track"]),
+    }
+
+
+@router.get("/stream/queue")
+def get_stream_queue(request: Request):
+    queue = radio_orchestrator.get_playout_queue()
+
+    items = [_with_absolute_asset_url(request, track) for track in queue]
+
+    return {
+        "items": items,
+        "count": len(items),
+    }
+
+
+@router.get("/stream/playlist.m3u")
+def get_stream_playlist(request: Request):
+    queue = radio_orchestrator.get_playout_queue()
+
+    lines = ["#EXTM3U"]
+
+    for track in queue:
+        asset_url = _absolute_asset_url(request, track.get("audio_asset_uri"))
+
+        if asset_url is None:
+            continue
+
+        title = track.get("title", "Untitled Track")
+        duration_seconds = int(track.get("duration_seconds", 0))
+
+        lines.append(f"#EXTINF:{duration_seconds},{title}")
+        lines.append(asset_url)
+
+    playlist_content = "\n".join(lines) + "\n"
+    return Response(content=playlist_content, media_type="audio/x-mpegurl")
 
 
 @router.post("/generate-next")

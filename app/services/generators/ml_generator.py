@@ -8,13 +8,15 @@ from app.services.generators.base import BaseTrackGenerator
 from app.services.generators.prompt_builder import build_music_prompt
 from app.services.generators.providers.base import BaseGenerationProvider
 from app.services.generators.providers.factory import get_generation_provider
+from app.services.storage.audio_asset_storage import AudioAssetStorage
 
 
 class MLTrackGenerator(BaseTrackGenerator):
     def __init__(self, provider: BaseGenerationProvider | None = None) -> None:
         self.name = "ml_pipeline_generator"
-        self.version = "2.0"
+        self.version = "3.0"
         self.provider = provider or get_generation_provider()
+        self.asset_storage = AudioAssetStorage()
 
     def generate_track(self, request: TrackGenerationRequest) -> Track:
         prompt_text = build_music_prompt(request)
@@ -35,17 +37,22 @@ class MLTrackGenerator(BaseTrackGenerator):
 
             try:
                 completed_job = self.provider.wait_for_job_completion(submitted_job.job_id)
-
                 job_repo.mark_completed(db_job, completed_job)
 
-                db_asset = None
-                if completed_job.audio_asset_uri:
-                    db_asset = asset_repo.create_asset(
-                        generation_job_id=db_job.id,
-                        asset_uri=completed_job.audio_asset_uri,
-                        duration_seconds=request.duration_seconds,
-                        asset_format="wav",
-                    )
+                public_asset_uri = self.asset_storage.create_placeholder_asset(
+                    sequence_number=request.sequence_number,
+                    provider_job_id=submitted_job.job_id,
+                    bpm=request.bpm,
+                    mood=request.mood,
+                    duration_seconds=request.duration_seconds,
+                )
+
+                db_asset = asset_repo.create_asset(
+                    generation_job_id=db_job.id,
+                    asset_uri=public_asset_uri,
+                    duration_seconds=request.duration_seconds,
+                    asset_format="wav",
+                )
 
                 track = Track(
                     sequence_number=request.sequence_number,
@@ -61,12 +68,12 @@ class MLTrackGenerator(BaseTrackGenerator):
                     generation_status=completed_job.status,
                     generation_time_ms=completed_job.generation_time_ms,
                     prompt_text=completed_job.prompt_text,
-                    audio_asset_uri=completed_job.audio_asset_uri,
+                    audio_asset_uri=public_asset_uri,
                 )
 
                 track_repo.create_track(
                     generation_job_id=db_job.id,
-                    generated_asset_id=db_asset.id if db_asset else None,
+                    generated_asset_id=db_asset.id,
                     track=track,
                 )
 
@@ -91,20 +98,20 @@ class MLTrackGenerator(BaseTrackGenerator):
             "supports_real_audio_generation": False,
             "supports_provider_jobs": True,
             "supports_persistence": True,
+            "supports_playout_assets": True,
             "provider": self.provider.get_info(),
         }
 
     def get_generation_job(self, job_id: str) -> dict | None:
         provider_job = self.provider.get_job(job_id)
-        if provider_job is not None:
-            return provider_job.model_dump()
+        provider_job_dict = provider_job.model_dump() if provider_job is not None else None
 
         with SessionLocal() as db:
             job_repo = GenerationJobRepository(db)
             db_job = job_repo.get_by_provider_job_id(job_id)
 
             if db_job is None:
-                return None
+                return provider_job_dict
 
             return {
                 "job_id": db_job.provider_job_id,
@@ -137,6 +144,9 @@ class MLTrackGenerator(BaseTrackGenerator):
                     "generation_time_ms": job.generation_time_ms,
                     "submitted_at": job.submitted_at,
                     "completed_at": job.completed_at,
+                    "audio_asset_uri": (
+                        job.generated_asset.asset_uri if job.generated_asset else None
+                    ),
                 }
                 for job in jobs
             ]
@@ -158,6 +168,9 @@ class MLTrackGenerator(BaseTrackGenerator):
                     "duration_seconds": track.duration_seconds,
                     "generator_name": track.generator_name,
                     "provider_name": track.provider_name,
+                    "audio_asset_uri": (
+                        track.generated_asset.asset_uri if track.generated_asset else None
+                    ),
                     "created_at": track.created_at,
                 }
                 for track in tracks
