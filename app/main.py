@@ -12,6 +12,8 @@ from app.services.storage.audio_asset_storage import AudioAssetStorage
 settings = get_settings()
 
 Path(settings.asset_storage_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.hls_output_dir).mkdir(parents=True, exist_ok=True)
+Path(settings.playout_manifest_path).parent.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title=settings.app_name)
 
@@ -26,6 +28,12 @@ app.mount(
     settings.asset_public_path,
     StaticFiles(directory=settings.asset_storage_dir),
     name="assets",
+)
+
+app.mount(
+    settings.hls_public_path,
+    StaticFiles(directory=settings.hls_output_dir),
+    name="hls",
 )
 
 app.include_router(health_router)

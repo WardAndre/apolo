@@ -6,15 +6,15 @@ from app.services.orchestrator import radio_orchestrator
 router = APIRouter(prefix="/radio", tags=["radio"])
 
 
-def _absolute_asset_url(request: Request, asset_uri: str | None) -> str | None:
-    if asset_uri is None:
+def _absolute_url(request: Request, uri: str | None) -> str | None:
+    if uri is None:
         return None
 
-    if asset_uri.startswith("http://") or asset_uri.startswith("https://"):
-        return asset_uri
+    if uri.startswith("http://") or uri.startswith("https://"):
+        return uri
 
     base_url = str(request.base_url).rstrip("/")
-    return f"{base_url}{asset_uri}"
+    return f"{base_url}{uri}"
 
 
 def _with_absolute_asset_url(request: Request, track: dict | None) -> dict | None:
@@ -22,7 +22,7 @@ def _with_absolute_asset_url(request: Request, track: dict | None) -> dict | Non
         return None
 
     payload = dict(track)
-    payload["absolute_audio_asset_url"] = _absolute_asset_url(
+    payload["absolute_audio_asset_url"] = _absolute_url(
         request,
         payload.get("audio_asset_uri"),
     )
@@ -46,6 +46,9 @@ def get_radio_settings():
         "asset_storage_dir": settings.asset_storage_dir,
         "asset_public_path": settings.asset_public_path,
         "placeholder_asset_seconds": settings.placeholder_asset_seconds,
+        "playout_manifest_path": settings.playout_manifest_path,
+        "hls_output_dir": settings.hls_output_dir,
+        "hls_public_path": settings.hls_public_path,
     }
 
 
@@ -111,6 +114,11 @@ def get_playback_state():
     return radio_orchestrator.get_playback_state()
 
 
+@router.get("/playout/manifest")
+def get_playout_manifest():
+    return radio_orchestrator.get_playout_manifest_info()
+
+
 @router.get("/stream/now-playing")
 def get_now_playing(request: Request):
     current_track = radio_orchestrator.get_now_playing()
@@ -142,7 +150,7 @@ def get_stream_playlist(request: Request):
     lines = ["#EXTM3U"]
 
     for track in queue:
-        asset_url = _absolute_asset_url(request, track.get("audio_asset_uri"))
+        asset_url = _absolute_url(request, track.get("audio_asset_uri"))
 
         if asset_url is None:
             continue
@@ -155,6 +163,19 @@ def get_stream_playlist(request: Request):
 
     playlist_content = "\n".join(lines) + "\n"
     return Response(content=playlist_content, media_type="audio/x-mpegurl")
+
+
+@router.get("/stream/hls")
+def get_hls_stream_info(request: Request):
+    settings = get_settings()
+    master_playlist_url = _absolute_url(request, f"{settings.hls_public_path}/live.m3u8")
+
+    return {
+        "master_playlist_url": master_playlist_url,
+        "hls_public_path": settings.hls_public_path,
+        "playout_manifest": radio_orchestrator.get_playout_manifest_info(),
+        "note": "Run Liquidsoap separately to generate HLS segments and playlists.",
+    }
 
 
 @router.post("/generate-next")
