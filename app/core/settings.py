@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     asset_public_path: str = "/assets"
     placeholder_asset_seconds: int = 20
 
+    playout_manifest_path: str = "storage/playout/liquidsoap_queue.m3u"
+    playout_asset_root: str = "/app/storage/assets"
+
+    hls_output_dir: str = "storage/hls"
+    hls_public_path: str = "/hls"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

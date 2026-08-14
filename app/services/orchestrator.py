@@ -5,6 +5,7 @@ from app.core.radio_profile import RADIO_PROFILE
 from app.schemas.generation import TrackGenerationRequest
 from app.schemas.track import Track
 from app.services.generators.factory import get_track_generator
+from app.services.playout.manifest_writer import PlayoutManifestWriter
 
 
 class RadioOrchestrator:
@@ -26,11 +27,13 @@ class RadioOrchestrator:
         self._available_keys = RADIO_PROFILE["musical_keys"]
 
         self._track_generator = get_track_generator()
+        self._playout_manifest_writer = PlayoutManifestWriter()
 
         self._buffer: deque[Track] = deque()
         self._current_track: Track | None = None
         self._sequence_number = 0
         self._is_playing = False
+        self._playout_manifest_path = self._sync_playout_manifest()
 
     def get_buffer_minutes(self) -> float:
         total_buffer_seconds = sum(track.duration_seconds for track in self._buffer)
@@ -87,11 +90,36 @@ class RadioOrchestrator:
             "generator": self.get_generator_info(),
         }
 
+    def get_playout_queue(self) -> list[dict]:
+        return [track.model_dump() for track in self._get_playout_tracks()]
+
+    def get_now_playing(self) -> dict | None:
+        if self._current_track is None:
+            return None
+        return self._current_track.model_dump()
+
+    def get_playout_manifest_info(self) -> dict:
+        return {
+            "manifest_path": self._playout_manifest_path,
+            "queued_entries": len(self._get_playout_tracks()),
+        }
+
+    def get_generation_job(self, job_id: str) -> dict | None:
+        return self._track_generator.get_generation_job(job_id)
+
+    def list_recent_generation_jobs(self, limit: int = 20) -> list[dict]:
+        return self._track_generator.list_recent_generation_jobs(limit)
+
+    def list_recent_tracks(self, limit: int = 20) -> list[dict]:
+        return self._track_generator.list_recent_tracks(limit)
+
     def generate_next_track(self) -> Track:
         track = self._create_track()
 
         if self._current_track is None:
             self.start_playback()
+        else:
+            self._sync_playout_manifest()
 
         return track
 
@@ -103,6 +131,8 @@ class RadioOrchestrator:
 
         if auto_start_playback and self._current_track is None and self._buffer:
             self.start_playback()
+        else:
+            self._sync_playout_manifest()
 
         return generated_tracks
 
@@ -144,6 +174,7 @@ class RadioOrchestrator:
 
         self._is_playing = self._current_track is not None
         auto_refill_result = self.ensure_minimum_buffer()
+        self._sync_playout_manifest()
 
         return {
             "message": "Playback started",
@@ -166,6 +197,8 @@ class RadioOrchestrator:
         if self._current_track is None and self._buffer:
             self._current_track = self._buffer.popleft()
             self._is_playing = True
+
+        self._sync_playout_manifest()
 
         return {
             "message": "Playback advanced to next track",
@@ -231,6 +264,18 @@ class RadioOrchestrator:
             return self._current_track
         return None
 
+    def _get_playout_tracks(self) -> list[Track]:
+        tracks: list[Track] = []
+
+        if self._current_track is not None:
+            tracks.append(self._current_track)
+
+        tracks.extend(list(self._buffer))
+        return tracks
+
+    def _sync_playout_manifest(self) -> str:
+        return self._playout_manifest_writer.write_queue(self._get_playout_tracks())
+
     def _choose_next_energy(self, current_energy: str) -> str:
         transitions = {
             "medium": ["medium", "medium_high"],
@@ -266,28 +311,5 @@ class RadioOrchestrator:
     def _choose_next_duration(self) -> int:
         return random.choice(self._duration_options)
 
-    def get_generation_job(self, job_id: str) -> dict | None:
-        return self._track_generator.get_generation_job(job_id)
-
-    def list_recent_generation_jobs(self, limit: int = 20) -> list[dict]:
-        return self._track_generator.list_recent_generation_jobs(limit)
-
-    def list_recent_tracks(self, limit: int = 20) -> list[dict]:
-        return self._track_generator.list_recent_tracks(limit)
-
-    def get_playout_queue(self) -> list[dict]:
-        queue: list[dict] = []
-
-        if self._current_track is not None:
-            queue.append(self._current_track.model_dump())
-
-        queue.extend(track.model_dump() for track in self._buffer)
-        return queue
-
-    def get_now_playing(self) -> dict | None:
-        if self._current_track is None:
-            return None
-
-        return self._current_track.model_dump()
 
 radio_orchestrator = RadioOrchestrator()

@@ -1,0 +1,15 @@
+services:
+  liquidsoap:
+    image: savonet/liquidsoap:v2.4.5
+    container_name: apolo-liquidsoap
+
+    working_dir: /app
+
+    volumes:
+      - ./liquidsoap:/app/liquidsoap:ro
+      - ./storage:/app/storage
+
+    command:
+      - liquidsoap/apolo_hls.liq
+
+    restart: unless-stopped
