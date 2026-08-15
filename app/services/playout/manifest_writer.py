@@ -25,7 +25,9 @@ class PlayoutManifestWriter:
             asset_path = self._asset_uri_to_playout_path(track.audio_asset_uri)
 
             if asset_path is not None:
-                lines.append(str(asset_path))
+                lines.append(
+                    f'annotate:apolo_track_id="{track.id}":{asset_path}'
+                )
 
         self.manifest_path.write_text(
             "\n".join(lines) + "\n",
