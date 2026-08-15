@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
+from app.schemas.playback import LiquidsoapTrackEvent
 from app.core.settings import get_settings
 from app.services.orchestrator import radio_orchestrator
 
@@ -217,3 +218,10 @@ def start_playback():
 @router.post("/playback/next")
 def advance_playback():
     return radio_orchestrator.advance_to_next_track()
+
+
+@router.post("/playback/liquidsoap/track-start")
+def liquidsoap_track_started(event: LiquidsoapTrackEvent):
+    return radio_orchestrator.sync_playback_from_liquidsoap(
+        event.model_dump(exclude_none=True)
+    )

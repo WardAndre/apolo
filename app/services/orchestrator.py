@@ -1,5 +1,7 @@
-from collections import deque
 import random
+from collections import deque
+from datetime import datetime, timezone
+from pathlib import Path
 
 from app.core.radio_profile import RADIO_PROFILE
 from app.schemas.generation import TrackGenerationRequest
@@ -33,6 +35,8 @@ class RadioOrchestrator:
         self._current_track: Track | None = None
         self._sequence_number = 0
         self._is_playing = False
+        self._liquidsoap_track_started_at: datetime | None = None
+        self._liquidsoap_metadata: dict = {}
         self._playout_manifest_path = self._sync_playout_manifest()
 
     def get_buffer_minutes(self) -> float:
@@ -96,7 +100,19 @@ class RadioOrchestrator:
     def get_now_playing(self) -> dict | None:
         if self._current_track is None:
             return None
-        return self._current_track.model_dump()
+
+        payload = self._current_track.model_dump()
+
+        payload["playback_source"] = (
+            "liquidsoap"
+            if self._liquidsoap_track_started_at is not None
+            else "orchestrator"
+        )
+
+        payload["started_at"] = self._liquidsoap_track_started_at
+        payload["liquidsoap_metadata"] = self._liquidsoap_metadata
+
+        return payload
 
     def get_playout_manifest_info(self) -> dict:
         return {
@@ -310,6 +326,63 @@ class RadioOrchestrator:
 
     def _choose_next_duration(self) -> int:
         return random.choice(self._duration_options)
+
+    def sync_playback_from_liquidsoap(self, metadata: dict) -> dict:
+        apolo_track_id = metadata.get("apolo_track_id")
+        filename = metadata.get("filename") or metadata.get("initial_uri")
+
+        playout_tracks = self._get_playout_tracks()
+        matching_index = None
+
+        # Estratégia principal: ID explícito da track.
+        if apolo_track_id:
+            for index, track in enumerate(playout_tracks):
+                if str(track.id) == apolo_track_id:
+                    matching_index = index
+                    break
+
+        # Fallback: nome do arquivo.
+        if matching_index is None and filename:
+            filename = Path(filename).name
+
+            for index, track in enumerate(playout_tracks):
+                if not track.audio_asset_uri:
+                    continue
+
+                track_filename = Path(track.audio_asset_uri).name
+
+                if track_filename == filename:
+                    matching_index = index
+                    break
+
+        if matching_index is None:
+            return {
+                "synced": False,
+                "reason": "Track reported by Liquidsoap was not found in current playout queue",
+                "apolo_track_id": apolo_track_id,
+                "filename": filename,
+            }
+
+        playing_track = playout_tracks[matching_index]
+
+        remaining_tracks = (
+            playout_tracks[matching_index + 1:]
+            + playout_tracks[:matching_index]
+        )
+
+        self._current_track = playing_track
+        self._buffer = deque(remaining_tracks)
+        self._is_playing = True
+
+        self._liquidsoap_track_started_at = datetime.now(timezone.utc)
+        self._liquidsoap_metadata = metadata
+
+        return {
+            "synced": True,
+            "current_track": playing_track.model_dump(),
+            "started_at": self._liquidsoap_track_started_at,
+            "remaining_tracks": len(self._buffer),
+        }
 
 
 radio_orchestrator = RadioOrchestrator()
