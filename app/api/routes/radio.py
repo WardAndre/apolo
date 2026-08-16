@@ -225,3 +225,8 @@ def liquidsoap_track_started(event: LiquidsoapTrackEvent):
     return radio_orchestrator.sync_playback_from_liquidsoap(
         event.model_dump(exclude_none=True)
     )
+
+
+@router.get("/playout/next-request")
+def get_next_playout_request():
+    return radio_orchestrator.get_next_playout_request()
