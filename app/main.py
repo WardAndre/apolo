@@ -8,6 +8,7 @@ from app.api.routes.radio import router as radio_router
 from app.core.database import init_db
 from app.core.settings import get_settings
 from app.services.storage.audio_asset_storage import AudioAssetStorage
+from app.services.orchestrator import radio_orchestrator
 
 settings = get_settings()
 
@@ -22,6 +23,7 @@ app = FastAPI(title=settings.app_name)
 def on_startup() -> None:
     init_db()
     AudioAssetStorage().ensure_storage_dir()
+    radio_orchestrator.restore_persistent_state()
 
 
 app.mount(

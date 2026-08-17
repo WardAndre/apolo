@@ -1,7 +1,8 @@
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models.radio_track import RadioTrackModel
+from app.db.models.generated_asset import GeneratedAssetModel
 from app.schemas.track import Track
 
 
@@ -39,3 +40,27 @@ class RadioTrackRepository:
             .limit(limit)
         )
         return list(self.db.scalars(stmt).all())
+
+    def get_max_sequence_number(self) -> int:
+        stmt = select(func.max(RadioTrackModel.sequence_number))
+        max_sequence_number = self.db.scalar(stmt)
+
+        return max_sequence_number or 0
+
+    def get_by_asset_filename(
+            self,
+            filename: str,
+    ) -> RadioTrackModel | None:
+        stmt = (
+            select(RadioTrackModel)
+            .join(RadioTrackModel.generated_asset)
+            .where(
+                GeneratedAssetModel.asset_uri.endswith(
+                    f"/{filename}"
+                )
+            )
+            .order_by(desc(RadioTrackModel.id))
+            .limit(1)
+        )
+
+        return self.db.scalar(stmt)

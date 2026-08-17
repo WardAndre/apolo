@@ -9,6 +9,8 @@ from app.schemas.generation import TrackGenerationRequest
 from app.schemas.track import Track
 from app.services.generators.factory import get_track_generator
 from app.services.playout.manifest_writer import PlayoutManifestWriter
+from app.core.database import SessionLocal
+from app.repositories.radio_track_repository import RadioTrackRepository
 
 
 class RadioOrchestrator:
@@ -62,6 +64,22 @@ class RadioOrchestrator:
 
     def get_generator_info(self) -> dict:
         return self._track_generator.get_info()
+
+    def restore_persistent_state(self) -> dict:
+        with self._track_generation_lock:
+            with SessionLocal() as db:
+                repository = RadioTrackRepository(db)
+                max_sequence_number = repository.get_max_sequence_number()
+
+            self._sequence_number = max(
+                self._sequence_number,
+                max_sequence_number,
+            )
+
+        return {
+            "restored": True,
+            "sequence_number": self._sequence_number,
+        }
 
     def get_status(self) -> dict:
         pending_list = list(self._pending_playout)
@@ -357,6 +375,53 @@ class RadioOrchestrator:
     def _choose_next_duration(self) -> int:
         return random.choice(self._duration_options)
 
+    def _restore_track_from_persistence(
+            self,
+            metadata: dict,
+    ) -> Track | None:
+        apolo_track_id = metadata.get("apolo_track_id")
+        filename = metadata.get("filename") or metadata.get("initial_uri")
+
+        if not apolo_track_id or not filename:
+            return None
+
+        asset_filename = Path(filename).name
+
+        with SessionLocal() as db:
+            repository = RadioTrackRepository(db)
+
+            db_track = repository.get_by_asset_filename(
+                asset_filename
+            )
+
+            if db_track is None:
+                return None
+
+            db_job = db_track.generation_job
+            db_asset = db_track.generated_asset
+
+            if db_job is None or db_asset is None:
+                return None
+
+            return Track(
+                id=apolo_track_id,
+                sequence_number=db_track.sequence_number,
+                title=db_track.title,
+                bpm=db_track.bpm,
+                energy=db_track.energy,
+                mood=db_track.mood,
+                musical_key=db_track.musical_key,
+                duration_seconds=db_track.duration_seconds,
+                generator_name=db_track.generator_name,
+                provider_name=db_track.provider_name,
+                generation_job_id=db_job.provider_job_id,
+                generation_status=db_job.status,
+                generation_time_ms=db_job.generation_time_ms,
+                prompt_text=db_job.prompt_text,
+                audio_asset_uri=db_asset.asset_uri,
+                created_at=db_track.created_at,
+            )
+
     def sync_playback_from_liquidsoap(self, metadata: dict) -> dict:
         apolo_track_id = metadata.get("apolo_track_id")
         filename = metadata.get("filename") or metadata.get("initial_uri")
@@ -411,6 +476,34 @@ class RadioOrchestrator:
                 }
 
         if matching_index is None:
+
+            recovered_track = self._restore_track_from_persistence(
+                metadata
+            )
+
+            if recovered_track is not None:
+                self._current_track = recovered_track
+                self._is_playing = True
+                self._liquidsoap_track_started_at = datetime.now(
+                    timezone.utc
+                )
+                self._liquidsoap_metadata = metadata
+
+                auto_refill_result = self.ensure_minimum_buffer()
+
+                return {
+                    "synced": True,
+                    "recovered_from_persistence": True,
+                    "current_track": recovered_track.model_dump(),
+                    "started_at": self._liquidsoap_track_started_at,
+                    "pending_playout_count": len(
+                        self._pending_playout
+                    ),
+                    "buffer_tracks_count": len(self._buffer),
+                    "buffer_minutes": self.get_buffer_minutes(),
+                    "auto_refill": auto_refill_result,
+                }
+
             return {
                 "synced": False,
                 "reason": (
