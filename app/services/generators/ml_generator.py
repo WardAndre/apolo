@@ -39,9 +39,16 @@ class MLTrackGenerator(BaseTrackGenerator):
                 completed_job = self.provider.wait_for_job_completion(submitted_job.job_id)
                 job_repo.mark_completed(db_job, completed_job)
 
-                public_asset_uri = self.asset_storage.create_placeholder_asset(
+                if completed_job.audio_result is None:
+                    raise ValueError(
+                        f"Provider job completed without audio result: "
+                        f"{completed_job.job_id}"
+                    )
+
+                stored_asset = self.asset_storage.persist_provider_asset(
+                    audio_result=completed_job.audio_result,
                     sequence_number=request.sequence_number,
-                    provider_job_id=submitted_job.job_id,
+                    provider_job_id=completed_job.job_id,
                     bpm=request.bpm,
                     mood=request.mood,
                     duration_seconds=request.duration_seconds,
@@ -49,9 +56,9 @@ class MLTrackGenerator(BaseTrackGenerator):
 
                 db_asset = asset_repo.create_asset(
                     generation_job_id=db_job.id,
-                    asset_uri=public_asset_uri,
+                    asset_uri=stored_asset.asset_uri,
                     duration_seconds=request.duration_seconds,
-                    asset_format="wav",
+                    asset_format=stored_asset.format,
                 )
 
                 track = Track(
@@ -68,7 +75,7 @@ class MLTrackGenerator(BaseTrackGenerator):
                     generation_status=completed_job.status,
                     generation_time_ms=completed_job.generation_time_ms,
                     prompt_text=completed_job.prompt_text,
-                    audio_asset_uri=public_asset_uri,
+                    audio_asset_uri=stored_asset.asset_uri,
                 )
 
                 track_repo.create_track(
@@ -91,15 +98,20 @@ class MLTrackGenerator(BaseTrackGenerator):
                 raise
 
     def get_info(self) -> dict:
+        provider_info = self.provider.get_info()
+
         return {
             "name": self.name,
             "version": self.version,
             "type": "ml_pipeline",
-            "supports_real_audio_generation": False,
+            "supports_real_audio_generation": provider_info.get(
+                "supports_real_audio_generation",
+                False,
+            ),
             "supports_provider_jobs": True,
             "supports_persistence": True,
             "supports_playout_assets": True,
-            "provider": self.provider.get_info(),
+            "provider": provider_info,
         }
 
     def get_generation_job(self, job_id: str) -> dict | None:
