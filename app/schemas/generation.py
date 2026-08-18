@@ -18,6 +18,17 @@ class TrackGenerationRequest(BaseModel):
     duration_seconds: int
 
 
+class ProviderAudioResult(BaseModel):
+    source_uri: str
+    format: str
+    content_type: str | None = None
+
+
+class StoredAudioAsset(BaseModel):
+    asset_uri: str
+    format: str
+
+
 class ProviderGenerationJob(BaseModel):
     job_id: str
     provider_name: str
@@ -26,5 +37,5 @@ class ProviderGenerationJob(BaseModel):
     submitted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
     generation_time_ms: int | None = None
-    audio_asset_uri: str | None = None
+    audio_result: ProviderAudioResult | None = None
     error_message: str | None = None

@@ -3,7 +3,11 @@ import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.schemas.generation import ProviderGenerationJob, TrackGenerationRequest
+from app.schemas.generation import (
+    ProviderAudioResult,
+    ProviderGenerationJob,
+    TrackGenerationRequest,
+)
 from app.services.generators.providers.base import BaseGenerationProvider
 
 
@@ -55,8 +59,13 @@ class SimulatedVertexProvider(BaseGenerationProvider):
                 "status": "completed",
                 "completed_at": datetime.now(timezone.utc),
                 "generation_time_ms": generation_time_ms,
-                "audio_asset_uri": (
-                    f"simulated-vertex://apolo/jobs/{_slugify(job_id)}/audio.wav"
+                "audio_result": ProviderAudioResult(
+                    source_uri=(
+                        f"simulated-vertex://apolo/jobs/"
+                        f"{_slugify(job_id)}/audio.wav"
+                    ),
+                    format="wav",
+                    content_type="audio/wav",
                 ),
             }
         )
